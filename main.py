@@ -1,6 +1,11 @@
-from typing import List, Sequence
+import time
+from typing import List, Sequence, Tuple
 
 EPSILON = 1e-9
+PERF_REPEAT = 10
+
+CROSS_FILTER_3X3: List[List[float]] = [[0, 1, 0], [1, 1, 1], [0, 1, 0]]
+X_FILTER_3X3: List[List[float]] = [[1, 0, 1], [0, 1, 0], [1, 0, 1]]
 
 CROSS = "Cross"
 X = "X"
@@ -61,3 +66,19 @@ def decide(score_cross: float, score_x: float) -> str:
     if abs(score_cross - score_x) < EPSILON:
         return UNDECIDED
     return CROSS if score_cross > score_x else X
+
+
+def measure_mac_ms(pattern: Grid, filter_grid: Grid, repeat: int = PERF_REPEAT) -> float:
+    start = time.perf_counter()
+    for _ in range(repeat):
+        mac(pattern, filter_grid)
+    elapsed = time.perf_counter() - start
+    return elapsed * 1000 / repeat
+
+
+def print_performance_table(measurements: Sequence[Tuple[int, float]]) -> None:
+    print("크기        평균 시간(ms)      연산 횟수")
+    print("-" * 40)
+    for size, avg_ms in measurements:
+        label = "%dx%d" % (size, size)
+        print("%-12s%-18.4f%d" % (label, avg_ms, size * size))
