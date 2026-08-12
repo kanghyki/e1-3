@@ -345,3 +345,30 @@ def run_json_mode(path: str = DATA_PATH) -> None:
 
     print_section("[4] 결과 요약")
     print_summary(results)
+
+
+def choose_mode() -> str:
+    while True:
+        print("[모드 선택]")
+        print("1. 사용자 입력 (3x3)")
+        print("2. data.json 분석")
+        choice = input("선택: ").strip()
+        if choice in ("1", "2"):
+            return choice
+        print("1 또는 2 중에서 선택하세요.")
+
+
+def main() -> None:
+    print("=== Mini NPU Simulator ===")
+    try:
+        if choose_mode() == "1":
+            run_user_input_mode()
+        else:
+            run_json_mode()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        print("입력이 종료되어 프로그램을 종료합니다.")
+
+
+if __name__ == "__main__":
+    main()
