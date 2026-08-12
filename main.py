@@ -62,10 +62,17 @@ def mac(pattern: Grid, filter_grid: Grid) -> float:
     return total
 
 
+def compare_scores(score_a: float, score_b: float) -> int:
+    if abs(score_a - score_b) < EPSILON:
+        return 0
+    return 1 if score_a > score_b else -1
+
+
 def decide(score_cross: float, score_x: float) -> str:
-    if abs(score_cross - score_x) < EPSILON:
+    result = compare_scores(score_cross, score_x)
+    if result == 0:
         return UNDECIDED
-    return CROSS if score_cross > score_x else X
+    return CROSS if result > 0 else X
 
 
 def measure_mac_ms(pattern: Grid, filter_grid: Grid, repeat: int = PERF_REPEAT) -> float:
@@ -82,3 +89,77 @@ def print_performance_table(measurements: Sequence[Tuple[int, float]]) -> None:
     for size, avg_ms in measurements:
         label = "%dx%d" % (size, size)
         print("%-12s%-18.4f%d" % (label, avg_ms, size * size))
+
+
+def print_section(title: str) -> None:
+    print()
+    print("#" + "-" * 39)
+    print("# " + title)
+    print("#" + "-" * 39)
+
+
+def print_grid(grid: Grid) -> None:
+    for r in range(grid.size):
+        print("  " + " ".join(repr(value) for value in grid.row(r)))
+
+
+def parse_row(line: str, size: int) -> List[float]:
+    tokens = line.split()
+    if len(tokens) != size:
+        raise ValueError(
+            "입력 형식 오류: 각 줄에 %d개의 숫자를 공백으로 구분해 입력하세요." % size
+        )
+    values: List[float] = []
+    for token in tokens:
+        try:
+            values.append(float(token))
+        except ValueError:
+            raise ValueError("입력 형식 오류: 숫자로 읽을 수 없는 값입니다 (%s)" % token)
+    return values
+
+
+def read_grid(title: str, size: int) -> Grid:
+    while True:
+        print("%s (%d줄 입력, 공백 구분)" % (title, size))
+        rows: List[List[float]] = []
+        try:
+            for _ in range(size):
+                rows.append(parse_row(input(), size))
+        except ValueError as error:
+            print(error)
+            print("처음부터 다시 입력하세요.")
+            continue
+        return Grid.from_rows(rows)
+
+
+def run_user_input_mode() -> None:
+    size = 3
+
+    print_section("[1] 필터 입력")
+    filter_a = read_grid("필터 A", size)
+    filter_b = read_grid("필터 B", size)
+    print("필터 A 저장 완료")
+    print_grid(filter_a)
+    print("필터 B 저장 완료")
+    print_grid(filter_b)
+
+    print_section("[2] 패턴 입력")
+    pattern = read_grid("패턴", size)
+    print("패턴 저장 완료")
+    print_grid(pattern)
+
+    print_section("[3] MAC 결과")
+    score_a = mac(pattern, filter_a)
+    score_b = mac(pattern, filter_b)
+    avg_ms = measure_mac_ms(pattern, filter_a)
+    print("A 점수: %r" % score_a)
+    print("B 점수: %r" % score_b)
+    print("연산 시간(평균/%d회): %.4f ms" % (PERF_REPEAT, avg_ms))
+    result = compare_scores(score_a, score_b)
+    if result == 0:
+        print("판정: 판정 불가 (|A-B| < %g)" % EPSILON)
+    else:
+        print("판정: %s" % ("A" if result > 0 else "B"))
+
+    print_section("[4] 성능 분석 (평균/%d회)" % PERF_REPEAT)
+    print_performance_table([(size, avg_ms)])
