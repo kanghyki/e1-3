@@ -5,14 +5,15 @@ from typing import Dict, List, NamedTuple, Sequence, Tuple
 EPSILON = 1e-9
 PERF_REPEAT = 10
 DATA_PATH = "data.json"
-LABEL_TABLE = {"+": "Cross", "cross": "Cross", "x": "X"}
-
-CROSS_FILTER_3X3: List[List[float]] = [[0, 1, 0], [1, 1, 1], [0, 1, 0]]
-X_FILTER_3X3: List[List[float]] = [[1, 0, 1], [0, 1, 0], [1, 0, 1]]
 
 CROSS = "Cross"
 X = "X"
 UNDECIDED = "UNDECIDED"
+
+LABEL_TABLE = {"+": CROSS, "cross": CROSS, "x": X}
+
+CROSS_FILTER_3X3: List[List[float]] = [[0, 1, 0], [1, 1, 1], [0, 1, 0]]
+X_FILTER_3X3: List[List[float]] = [[1, 0, 1], [0, 1, 0], [1, 0, 1]]
 
 
 class SchemaError(Exception):
@@ -26,14 +27,18 @@ class SizeMismatchError(SchemaError):
 class Grid:
     def __init__(self, size: int) -> None:
         if size <= 0:
-            raise ValueError("크기는 1 이상이어야 합니다.")
+            raise SchemaError("크기는 1 이상이어야 합니다.")
         self.size: int = size
         self._cells: List[List[float]] = [[0.0] * size for _ in range(size)]
 
     @classmethod
     def from_rows(cls, rows: Sequence[Sequence[float]]) -> "Grid":
+        if not isinstance(rows, list):
+            raise SchemaError("2차원 배열이 아닙니다.")
         size = len(rows)
         for row in rows:
+            if not isinstance(row, list):
+                raise SchemaError("2차원 배열이 아닙니다.")
             if len(row) != size:
                 raise SizeMismatchError(
                     "정사각 배열이 아닙니다: 행 %d개, 열 %d개" % (size, len(row))
@@ -41,7 +46,10 @@ class Grid:
         grid = cls(size)
         for r in range(size):
             for c in range(size):
-                grid.set(r, c, float(rows[r][c]))
+                value = rows[r][c]
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    raise SchemaError("숫자가 아닌 값이 있습니다: %r" % value)
+                grid.set(r, c, float(value))
         return grid
 
     def get(self, r: int, c: int) -> float:
@@ -310,7 +318,7 @@ def collect_performance(filters: FilterTable, patterns: Dict[str, object]) -> Li
                 pattern = candidate
                 break
         measurements.append((size, measure_mac_ms(pattern, filter_grid)))
-    return measurements
+    return sorted(measurements)
 
 
 def run_json_mode(path: str = DATA_PATH) -> None:
