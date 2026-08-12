@@ -1,8 +1,11 @@
+import json
 import time
-from typing import List, Sequence, Tuple
+from typing import Dict, List, NamedTuple, Sequence, Tuple
 
 EPSILON = 1e-9
 PERF_REPEAT = 10
+DATA_PATH = "data.json"
+LABEL_TABLE = {"+": "Cross", "cross": "Cross", "x": "X"}
 
 CROSS_FILTER_3X3: List[List[float]] = [[0, 1, 0], [1, 1, 1], [0, 1, 0]]
 X_FILTER_3X3: List[List[float]] = [[1, 0, 1], [0, 1, 0], [1, 0, 1]]
@@ -12,7 +15,11 @@ X = "X"
 UNDECIDED = "UNDECIDED"
 
 
-class SizeMismatchError(Exception):
+class SchemaError(Exception):
+    pass
+
+
+class SizeMismatchError(SchemaError):
     pass
 
 
@@ -163,3 +170,178 @@ def run_user_input_mode() -> None:
 
     print_section("[4] 성능 분석 (평균/%d회)" % PERF_REPEAT)
     print_performance_table([(size, avg_ms)])
+
+
+class CaseResult(NamedTuple):
+    name: str
+    passed: bool
+    verdict: str
+    expected: str
+    score_cross: float
+    score_x: float
+    reason: str
+
+
+FilterTable = Dict[int, Dict[str, Grid]]
+
+
+def normalize_label(raw: object) -> str:
+    key = str(raw).strip().lower()
+    if key not in LABEL_TABLE:
+        raise SchemaError("알 수 없는 라벨입니다: %r" % raw)
+    return LABEL_TABLE[key]
+
+
+def extract_size(key: str) -> int:
+    parts = key.split("_")
+    if len(parts) < 2 or parts[0] != "size":
+        raise SchemaError("키 형식 오류: %s" % key)
+    try:
+        return int(parts[1])
+    except ValueError:
+        raise SchemaError("키에서 크기를 읽을 수 없습니다: %s" % key)
+
+
+def safe_size(key: str) -> int:
+    try:
+        return extract_size(key)
+    except SchemaError:
+        return -1
+
+
+def load_filters(raw_filters: object) -> FilterTable:
+    if not isinstance(raw_filters, dict):
+        raise SchemaError("filters 항목이 없거나 형식이 올바르지 않습니다.")
+    filters: FilterTable = {}
+    for key in sorted(raw_filters, key=safe_size):
+        try:
+            size = extract_size(key)
+            pair: Dict[str, Grid] = {}
+            for label_key, rows in raw_filters[key].items():
+                grid = Grid.from_rows(rows)
+                if grid.size != size:
+                    raise SizeMismatchError(
+                        "%s 필터 크기 불일치: 키 %d, 실제 %d" % (key, size, grid.size)
+                    )
+                pair[normalize_label(label_key)] = grid
+            missing = [label for label in (CROSS, X) if label not in pair]
+            if missing:
+                raise SchemaError("%s 필터 누락: %s" % (key, ", ".join(missing)))
+        except (SchemaError, AttributeError, TypeError) as error:
+            print("✗ %s 필터 로드 실패 (%s)" % (key, error))
+            continue
+        filters[size] = pair
+        print("✓ %-8s 필터 로드 완료 (%s, %s)" % (key, CROSS, X))
+    return filters
+
+
+def evaluate_case(name: str, raw_case: object, filters: FilterTable) -> CaseResult:
+    try:
+        if not isinstance(raw_case, dict) or "input" not in raw_case or "expected" not in raw_case:
+            raise SchemaError("input/expected 키가 필요합니다.")
+        size = extract_size(name)
+        expected = normalize_label(raw_case["expected"])
+        pattern = Grid.from_rows(raw_case["input"])
+        if pattern.size != size:
+            raise SizeMismatchError(
+                "패턴 크기 불일치: 키 %d, 실제 %d" % (size, pattern.size)
+            )
+        if size not in filters:
+            raise SchemaError("size_%d 필터를 찾을 수 없습니다." % size)
+        filter_pair = filters[size]
+        score_cross = mac(pattern, filter_pair[CROSS])
+        score_x = mac(pattern, filter_pair[X])
+    except SchemaError as error:
+        return CaseResult(name, False, "ERROR", "-", 0.0, 0.0, str(error))
+
+    verdict = decide(score_cross, score_x)
+    if verdict == expected:
+        return CaseResult(name, True, verdict, expected, score_cross, score_x, "")
+    if verdict == UNDECIDED:
+        reason = "동점(UNDECIDED) 처리 규칙에 따라 FAIL"
+    else:
+        reason = "판정 %s != expected %s" % (verdict, expected)
+    return CaseResult(name, False, verdict, expected, score_cross, score_x, reason)
+
+
+def print_case_result(result: CaseResult) -> None:
+    print("--- %s ---" % result.name)
+    if result.verdict == "ERROR":
+        print("FAIL (%s)" % result.reason)
+        return
+    print("%s 점수: %r" % (CROSS, result.score_cross))
+    print("%s 점수: %r" % (X, result.score_x))
+    verdict_line = "판정: %s | expected: %s | %s" % (
+        result.verdict,
+        result.expected,
+        "PASS" if result.passed else "FAIL",
+    )
+    if not result.passed:
+        verdict_line += " (%s)" % result.reason
+    print(verdict_line)
+
+
+def print_summary(results: Sequence[CaseResult]) -> None:
+    failures = [result for result in results if not result.passed]
+    print("총 테스트: %d개" % len(results))
+    print("통과: %d개" % (len(results) - len(failures)))
+    print("실패: %d개" % len(failures))
+    if failures:
+        print("실패 케이스:")
+        for result in failures:
+            print("- %s: %s" % (result.name, result.reason))
+
+
+def collect_performance(filters: FilterTable, patterns: Dict[str, object]) -> List[Tuple[int, float]]:
+    measurements = [
+        (3, measure_mac_ms(Grid.from_rows(X_FILTER_3X3), Grid.from_rows(CROSS_FILTER_3X3)))
+    ]
+    for size in sorted(filters):
+        filter_grid = filters[size][CROSS]
+        pattern = filter_grid
+        for name, raw_case in patterns.items():
+            try:
+                if extract_size(name) != size:
+                    continue
+                candidate = Grid.from_rows(raw_case["input"])
+            except (SchemaError, KeyError, TypeError):
+                continue
+            if candidate.size == size:
+                pattern = candidate
+                break
+        measurements.append((size, measure_mac_ms(pattern, filter_grid)))
+    return measurements
+
+
+def run_json_mode(path: str = DATA_PATH) -> None:
+    try:
+        with open(path, encoding="utf-8") as data_file:
+            data = json.load(data_file)
+    except (OSError, json.JSONDecodeError) as error:
+        print("data.json을 읽을 수 없습니다: %s" % error)
+        return
+
+    print_section("[1] 필터 로드")
+    try:
+        filters = load_filters(data.get("filters") if isinstance(data, dict) else None)
+    except SchemaError as error:
+        print("필터 로드 실패: %s" % error)
+        return
+
+    patterns = data.get("patterns") if isinstance(data, dict) else None
+    if not isinstance(patterns, dict):
+        print("patterns 항목이 없거나 형식이 올바르지 않습니다.")
+        return
+
+    print_section("[2] 패턴 분석 (라벨 정규화 적용)")
+    results: List[CaseResult] = []
+    for name in patterns:
+        result = evaluate_case(name, patterns[name], filters)
+        results.append(result)
+        print_case_result(result)
+
+    print_section("[3] 성능 분석 (평균/%d회)" % PERF_REPEAT)
+    print_performance_table(collect_performance(filters, patterns))
+
+    print_section("[4] 결과 요약")
+    print_summary(results)
