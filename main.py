@@ -40,6 +40,7 @@ class Grid:
         if not isinstance(rows, list):
             raise SchemaError("2차원 배열이 아닙니다.")
         size = len(rows)
+        checked_rows: List[List[JSONValue]] = []
         for row in rows:
             if not isinstance(row, list):
                 raise SchemaError("2차원 배열이 아닙니다.")
@@ -47,10 +48,11 @@ class Grid:
                 raise SizeMismatchError(
                     f"정사각 배열이 아닙니다: 행 {size}개, 열 {len(row)}개"
                 )
+            checked_rows.append(row)
         grid = cls(size)
         for r in range(size):
             for c in range(size):
-                value = rows[r][c]
+                value = checked_rows[r][c]
                 if isinstance(value, bool) or not isinstance(value, (int, float)):
                     raise SchemaError(f"숫자가 아닌 값이 있습니다: {value!r}")
                 grid.set(r, c, float(value))
@@ -228,8 +230,11 @@ def load_filters(raw_filters: JSONValue) -> FilterTable:
     for key in sorted(raw_filters, key=safe_size):
         try:
             size = extract_size(key)
+            entry = raw_filters[key]
+            if not isinstance(entry, dict):
+                raise SchemaError(f"{key} 필터 형식 오류: 객체가 아닙니다.")
             pair: Dict[str, Grid] = {}
-            for label_key, rows in raw_filters[key].items():
+            for label_key, rows in entry.items():
                 grid = Grid.from_rows(rows)
                 if grid.size != size:
                     raise SizeMismatchError(
