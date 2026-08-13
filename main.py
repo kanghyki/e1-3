@@ -1,6 +1,10 @@
 import json
 import time
-from typing import Dict, List, NamedTuple, Sequence, Tuple
+from typing import Dict, List, Mapping, NamedTuple, Sequence, Tuple, Union
+
+JSONValue = Union[
+    None, bool, int, float, str, Sequence["JSONValue"], Mapping[str, "JSONValue"]
+]
 
 EPSILON = 1e-9
 PERF_REPEAT = 10
@@ -32,7 +36,7 @@ class Grid:
         self._cells: List[List[float]] = [[0.0] * size for _ in range(size)]
 
     @classmethod
-    def from_rows(cls, rows: Sequence[Sequence[float]]) -> "Grid":
+    def from_rows(cls, rows: JSONValue) -> "Grid":
         if not isinstance(rows, list):
             raise SchemaError("2차원 배열이 아닙니다.")
         size = len(rows)
@@ -98,7 +102,7 @@ def measure_mac_ms(pattern: Grid, filter_grid: Grid, repeat: int = PERF_REPEAT) 
     return elapsed * 1000 / repeat
 
 
-def print_performance_table(measurements: Sequence[Tuple[int, float]]) -> None:
+def print_performance_table(measurements: List[Tuple[int, float]]) -> None:
     print("크기        평균 시간(ms)      연산 횟수")
     print("-" * 40)
     for size, avg_ms in measurements:
@@ -193,7 +197,7 @@ class CaseResult(NamedTuple):
 FilterTable = Dict[int, Dict[str, Grid]]
 
 
-def normalize_label(raw: object) -> str:
+def normalize_label(raw: JSONValue) -> str:
     key = str(raw).strip().lower()
     if key not in LABEL_TABLE:
         raise SchemaError(f"알 수 없는 라벨입니다: {raw!r}")
@@ -217,7 +221,7 @@ def safe_size(key: str) -> int:
         return -1
 
 
-def load_filters(raw_filters: object) -> FilterTable:
+def load_filters(raw_filters: JSONValue) -> FilterTable:
     if not isinstance(raw_filters, dict):
         raise SchemaError("filters 항목이 없거나 형식이 올바르지 않습니다.")
     filters: FilterTable = {}
@@ -243,7 +247,7 @@ def load_filters(raw_filters: object) -> FilterTable:
     return filters
 
 
-def evaluate_case(name: str, raw_case: object, filters: FilterTable) -> CaseResult:
+def evaluate_case(name: str, raw_case: JSONValue, filters: FilterTable) -> CaseResult:
     try:
         if not isinstance(raw_case, dict) or "input" not in raw_case or "expected" not in raw_case:
             raise SchemaError("input/expected 키가 필요합니다.")
@@ -288,7 +292,7 @@ def print_case_result(result: CaseResult) -> None:
     print(verdict_line)
 
 
-def print_summary(results: Sequence[CaseResult]) -> None:
+def print_summary(results: List[CaseResult]) -> None:
     failures = [result for result in results if not result.passed]
     print(f"총 테스트: {len(results)}개")
     print(f"통과: {len(results) - len(failures)}개")
@@ -299,7 +303,7 @@ def print_summary(results: Sequence[CaseResult]) -> None:
             print(f"- {result.name}: {result.reason}")
 
 
-def collect_performance(filters: FilterTable, patterns: Dict[str, object]) -> List[Tuple[int, float]]:
+def collect_performance(filters: FilterTable, patterns: Dict[str, JSONValue]) -> List[Tuple[int, float]]:
     measurements = [
         (3, measure_mac_ms(Grid.from_rows(X_FILTER_3X3), Grid.from_rows(CROSS_FILTER_3X3)))
     ]
@@ -308,7 +312,7 @@ def collect_performance(filters: FilterTable, patterns: Dict[str, object]) -> Li
         pattern = filter_grid
         for name, raw_case in patterns.items():
             try:
-                if extract_size(name) != size:
+                if extract_size(name) != size or not isinstance(raw_case, dict):
                     continue
                 candidate = Grid.from_rows(raw_case["input"])
             except (SchemaError, KeyError, TypeError):
