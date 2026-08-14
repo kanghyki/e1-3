@@ -2,6 +2,11 @@ import json
 import time
 from typing import Dict, List, Mapping, NamedTuple, Sequence, Tuple, Union
 
+
+# ---------------------------------------
+# Types and constants
+# ---------------------------------------
+
 JSONValue = Union[
     None, bool, int, float, str, Sequence["JSONValue"], Mapping[str, "JSONValue"]
 ]
@@ -20,12 +25,22 @@ CROSS_FILTER_3X3: List[List[float]] = [[0, 1, 0], [1, 1, 1], [0, 1, 0]]
 X_FILTER_3X3: List[List[float]] = [[1, 0, 1], [0, 1, 0], [1, 0, 1]]
 
 
+# ---------------------------------------
+# Errors
+# ---------------------------------------
+
+
 class SchemaError(Exception):
     pass
 
 
 class SizeMismatchError(SchemaError):
     pass
+
+
+# ---------------------------------------
+# Core operations
+# ---------------------------------------
 
 
 class Grid:
@@ -108,6 +123,11 @@ def measure_mac_ms(pattern: Grid, filter_grid: Grid, repeat: int = PERF_REPEAT) 
     return elapsed * 1000 / repeat
 
 
+# ---------------------------------------
+# Shared output
+# ---------------------------------------
+
+
 def print_section(title: str) -> None:
     print()
     print("#" + "-" * 39)
@@ -121,6 +141,11 @@ def print_performance_table(measurements: List[Tuple[int, float]]) -> None:
     for size, avg_ms in measurements:
         label = f"{size}x{size}"
         print(f"{label:<12}{avg_ms:<18.4f}{size * size}")
+
+
+# ---------------------------------------
+# Mode 1: user input
+# ---------------------------------------
 
 
 def print_grid(grid: Grid) -> None:
@@ -188,6 +213,11 @@ def run_user_input_mode() -> None:
 
     print_section(f"[4] 성능 분석 (평균/{PERF_REPEAT}회)")
     print_performance_table([(size, avg_ms)])
+
+
+# ---------------------------------------
+# Mode 2: data.json analysis
+# ---------------------------------------
 
 
 class CaseResult(NamedTuple):
@@ -377,6 +407,11 @@ def run_json_mode(path: str = DATA_PATH) -> None:
 
     print_section("[4] 결과 요약")
     print_summary(results)
+
+
+# ---------------------------------------
+# Entry point
+# ---------------------------------------
 
 
 def choose_mode() -> str:
