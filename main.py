@@ -17,8 +17,8 @@ UNDECIDED = "UNDECIDED"
 
 LABEL_TABLE = {"+": CROSS, "cross": CROSS, "x": X}
 
-CROSS_FILTER_3X3: list[list[float]] = [[0, 1, 0], [1, 1, 1], [0, 1, 0]]
-X_FILTER_3X3: list[list[float]] = [[1, 0, 1], [0, 1, 0], [1, 0, 1]]
+MIN_FILTERS_PER_SIZE = 2
+BASELINE_3X3: list[list[float]] = [[0, 1, 0], [1, 1, 1], [0, 1, 0]]
 
 
 # ---------------------------------------
@@ -103,11 +103,10 @@ def compare_scores(score_a: float, score_b: float) -> int:
     return 1 if score_a > score_b else -1
 
 
-def decide(score_cross: float, score_x: float) -> str:
-    result = compare_scores(score_cross, score_x)
-    if result == 0:
-        return UNDECIDED
-    return CROSS if result > 0 else X
+def decide(scores: dict[str, float]) -> str:
+    best = max(scores.values())
+    leaders = [label for label, score in scores.items() if abs(score - best) < EPSILON]
+    return leaders[0] if len(leaders) == 1 else UNDECIDED
 
 
 def measure_mac_ms(pattern: Grid, filter_grid: Grid, repeat: int = PERF_REPEAT) -> float:
@@ -221,8 +220,7 @@ class CaseResult(NamedTuple):
     passed: bool
     verdict: str
     expected: str
-    score_cross: float
-    score_x: float
+    scores: dict[str, float]
     reason: str
 
 
@@ -270,22 +268,24 @@ def load_filters(raw_filters: object) -> FilterTable:
             entry = raw_filters[key]
             if not isinstance(entry, dict):
                 raise SchemaError(f"{key} 필터 형식 오류: 객체가 아닙니다.")
-            pair: dict[str, Grid] = {}
+            labelled: dict[str, Grid] = {}
             for label_key, rows in entry.items():
                 grid = Grid.from_rows(rows)
                 if grid.size != size:
                     raise SizeMismatchError(
                         f"{key} 필터 크기 불일치: 키 {size}, 실제 {grid.size}"
                     )
-                pair[normalize_label(label_key)] = grid
-            missing = [label for label in (CROSS, X) if label not in pair]
-            if missing:
-                raise SchemaError(f"{key} 필터 누락: {', '.join(missing)}")
+                labelled[normalize_label(label_key)] = grid
+            if len(labelled) < MIN_FILTERS_PER_SIZE:
+                raise SchemaError(
+                    f"{key} 필터 부족: {len(labelled)}개 "
+                    f"({MIN_FILTERS_PER_SIZE}개 이상 필요)"
+                )
         except (SchemaError, AttributeError, TypeError) as error:
             print(f"[FAIL] {key} 필터 로드 실패 ({error})")
             continue
-        filters[size] = pair
-        print(f"[OK]   {key:<8} 필터 로드 완료 ({CROSS}, {X})")
+        filters[size] = labelled
+        print(f"[OK]   {key:<8} 필터 로드 완료 ({', '.join(sorted(labelled))})")
     return filters
 
 
@@ -303,24 +303,23 @@ def parse_case(name: str, raw_case: object) -> ParsedCase:
 
 
 def error_result(name: str, reason: str) -> CaseResult:
-    return CaseResult(name, False, "ERROR", "-", 0.0, 0.0, reason)
+    return CaseResult(name, False, "ERROR", "-", {}, reason)
 
 
 def evaluate_case(case: ParsedCase, filters: FilterTable) -> CaseResult:
     if case.size not in filters:
         return error_result(case.name, f"size_{case.size} 필터를 찾을 수 없습니다.")
-    filter_pair = filters[case.size]
-    score_cross = mac(case.pattern, filter_pair[CROSS])
-    score_x = mac(case.pattern, filter_pair[X])
+    labelled = filters[case.size]
+    scores = {label: mac(case.pattern, labelled[label]) for label in sorted(labelled)}
 
-    verdict = decide(score_cross, score_x)
+    verdict = decide(scores)
     if verdict == case.expected:
-        return CaseResult(case.name, True, verdict, case.expected, score_cross, score_x, "")
+        return CaseResult(case.name, True, verdict, case.expected, scores, "")
     if verdict == UNDECIDED:
         reason = "동점(UNDECIDED) 처리 규칙에 따라 FAIL"
     else:
         reason = f"판정 {verdict} != expected {case.expected}"
-    return CaseResult(case.name, False, verdict, case.expected, score_cross, score_x, reason)
+    return CaseResult(case.name, False, verdict, case.expected, scores, reason)
 
 
 def print_case_result(result: CaseResult) -> None:
@@ -328,8 +327,8 @@ def print_case_result(result: CaseResult) -> None:
     if result.verdict == "ERROR":
         print(f"FAIL ({result.reason})")
         return
-    print(f"{CROSS} 점수: {result.score_cross!r}")
-    print(f"{X} 점수: {result.score_x!r}")
+    for label, score in result.scores.items():
+        print(f"{label} 점수: {score!r}")
     verdict_line = (
         f"판정: {result.verdict} | expected: {result.expected} | "
         f"{'PASS' if result.passed else 'FAIL'}"
@@ -343,11 +342,10 @@ def collect_performance(filters: FilterTable, cases: list[ParsedCase]) -> list[t
     patterns: dict[int, Grid] = {}
     for case in cases:
         patterns.setdefault(case.size, case.pattern)
-    measurements = [
-        (3, measure_mac_ms(Grid.from_rows(X_FILTER_3X3), Grid.from_rows(CROSS_FILTER_3X3)))
-    ]
+    baseline = Grid.from_rows(BASELINE_3X3)
+    measurements = [(3, measure_mac_ms(baseline, baseline))]
     for size in sorted(filters):
-        filter_grid = filters[size][CROSS]
+        filter_grid = filters[size][min(filters[size])]
         pattern = patterns.get(size, filter_grid)
         measurements.append((size, measure_mac_ms(pattern, filter_grid)))
     return sorted(measurements)
