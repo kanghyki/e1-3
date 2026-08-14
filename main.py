@@ -108,19 +108,19 @@ def measure_mac_ms(pattern: Grid, filter_grid: Grid, repeat: int = PERF_REPEAT) 
     return elapsed * 1000 / repeat
 
 
+def print_section(title: str) -> None:
+    print()
+    print("#" + "-" * 39)
+    print("# " + title)
+    print("#" + "-" * 39)
+
+
 def print_performance_table(measurements: List[Tuple[int, float]]) -> None:
     print("크기        평균 시간(ms)      연산 횟수")
     print("-" * 40)
     for size, avg_ms in measurements:
         label = f"{size}x{size}"
         print(f"{label:<12}{avg_ms:<18.4f}{size * size}")
-
-
-def print_section(title: str) -> None:
-    print()
-    print("#" + "-" * 39)
-    print("# " + title)
-    print("#" + "-" * 39)
 
 
 def print_grid(grid: Grid) -> None:
@@ -301,17 +301,6 @@ def print_case_result(result: CaseResult) -> None:
     print(verdict_line)
 
 
-def print_summary(results: List[CaseResult]) -> None:
-    failures = [result for result in results if not result.passed]
-    print(f"총 테스트: {len(results)}개")
-    print(f"통과: {len(results) - len(failures)}개")
-    print(f"실패: {len(failures)}개")
-    if failures:
-        print("실패 케이스:")
-        for result in failures:
-            print(f"- {result.name}: {result.reason}")
-
-
 def collect_performance(filters: FilterTable, patterns: Dict[str, JSONValue]) -> List[Tuple[int, float]]:
     measurements = [
         (3, measure_mac_ms(Grid.from_rows(X_FILTER_3X3), Grid.from_rows(CROSS_FILTER_3X3)))
@@ -331,6 +320,17 @@ def collect_performance(filters: FilterTable, patterns: Dict[str, JSONValue]) ->
                 break
         measurements.append((size, measure_mac_ms(pattern, filter_grid)))
     return sorted(measurements)
+
+
+def print_summary(results: List[CaseResult]) -> None:
+    failures = [result for result in results if not result.passed]
+    print(f"총 테스트: {len(results)}개")
+    print(f"통과: {len(results) - len(failures)}개")
+    print(f"실패: {len(failures)}개")
+    if failures:
+        print("실패 케이스:")
+        for result in failures:
+            print(f"- {result.name}: {result.reason}")
 
 
 def run_json_mode(path: str = DATA_PATH) -> None:
