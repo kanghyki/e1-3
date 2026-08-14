@@ -68,12 +68,15 @@ class Grid:
         return self._cells[r]
 
 
-def mac(pattern: Grid, filter_grid: Grid) -> float:
+def ensure_same_size(pattern: Grid, filter_grid: Grid) -> None:
     if pattern.size != filter_grid.size:
         raise SizeMismatchError(
             f"크기 불일치: 패턴 {pattern.size}x{pattern.size}, "
             f"필터 {filter_grid.size}x{filter_grid.size}"
         )
+
+
+def mac(pattern: Grid, filter_grid: Grid) -> float:
     total = 0.0
     for r in range(pattern.size):
         pattern_row = pattern.row(r)
@@ -97,6 +100,7 @@ def decide(score_cross: float, score_x: float) -> str:
 
 
 def measure_mac_ms(pattern: Grid, filter_grid: Grid, repeat: int = PERF_REPEAT) -> float:
+    ensure_same_size(pattern, filter_grid)
     start = time.perf_counter()
     for _ in range(repeat):
         mac(pattern, filter_grid)
