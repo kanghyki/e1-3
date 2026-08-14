@@ -18,7 +18,6 @@ UNDECIDED = "UNDECIDED"
 LABEL_TABLE = {"+": CROSS, "cross": CROSS, "x": X}
 
 MIN_FILTERS_PER_SIZE = 2
-BASELINE_3X3: list[list[float]] = [[0, 1, 0], [1, 1, 1], [0, 1, 0]]
 
 
 # ---------------------------------------
@@ -342,13 +341,12 @@ def collect_performance(filters: FilterTable, cases: list[ParsedCase]) -> list[t
     patterns: dict[int, Grid] = {}
     for case in cases:
         patterns.setdefault(case.size, case.pattern)
-    baseline = Grid.from_rows(BASELINE_3X3)
-    measurements = [(3, measure_mac_ms(baseline, baseline))]
+    measurements: list[tuple[int, float]] = []
     for size in sorted(filters):
         filter_grid = filters[size][min(filters[size])]
         pattern = patterns.get(size, filter_grid)
         measurements.append((size, measure_mac_ms(pattern, filter_grid)))
-    return sorted(measurements)
+    return measurements
 
 
 def print_summary(results: list[CaseResult]) -> None:
