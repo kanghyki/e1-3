@@ -200,6 +200,13 @@ class CaseResult(NamedTuple):
     reason: str
 
 
+class ParsedCase(NamedTuple):
+    name: str
+    size: int
+    pattern: Grid
+    expected: str
+
+
 FilterTable = Dict[int, Dict[str, Grid]]
 
 
@@ -256,33 +263,38 @@ def load_filters(raw_filters: JSONValue) -> FilterTable:
     return filters
 
 
-def evaluate_case(name: str, raw_case: JSONValue, filters: FilterTable) -> CaseResult:
-    try:
-        if not isinstance(raw_case, dict) or "input" not in raw_case or "expected" not in raw_case:
-            raise SchemaError("input/expected 키가 필요합니다.")
-        size = extract_size(name)
-        expected = normalize_label(raw_case["expected"])
-        pattern = Grid.from_rows(raw_case["input"])
-        if pattern.size != size:
-            raise SizeMismatchError(
-                f"패턴 크기 불일치: 키 {size}, 실제 {pattern.size}"
-            )
-        if size not in filters:
-            raise SchemaError(f"size_{size} 필터를 찾을 수 없습니다.")
-        filter_pair = filters[size]
-        score_cross = mac(pattern, filter_pair[CROSS])
-        score_x = mac(pattern, filter_pair[X])
-    except SchemaError as error:
-        return CaseResult(name, False, "ERROR", "-", 0.0, 0.0, str(error))
+def parse_case(name: str, raw_case: JSONValue) -> ParsedCase:
+    if not isinstance(raw_case, dict) or "input" not in raw_case or "expected" not in raw_case:
+        raise SchemaError("input/expected 키가 필요합니다.")
+    size = extract_size(name)
+    expected = normalize_label(raw_case["expected"])
+    pattern = Grid.from_rows(raw_case["input"])
+    if pattern.size != size:
+        raise SizeMismatchError(
+            f"패턴 크기 불일치: 키 {size}, 실제 {pattern.size}"
+        )
+    return ParsedCase(name, size, pattern, expected)
+
+
+def error_result(name: str, reason: str) -> CaseResult:
+    return CaseResult(name, False, "ERROR", "-", 0.0, 0.0, reason)
+
+
+def evaluate_case(case: ParsedCase, filters: FilterTable) -> CaseResult:
+    if case.size not in filters:
+        return error_result(case.name, f"size_{case.size} 필터를 찾을 수 없습니다.")
+    filter_pair = filters[case.size]
+    score_cross = mac(case.pattern, filter_pair[CROSS])
+    score_x = mac(case.pattern, filter_pair[X])
 
     verdict = decide(score_cross, score_x)
-    if verdict == expected:
-        return CaseResult(name, True, verdict, expected, score_cross, score_x, "")
+    if verdict == case.expected:
+        return CaseResult(case.name, True, verdict, case.expected, score_cross, score_x, "")
     if verdict == UNDECIDED:
         reason = "동점(UNDECIDED) 처리 규칙에 따라 FAIL"
     else:
-        reason = f"판정 {verdict} != expected {expected}"
-    return CaseResult(name, False, verdict, expected, score_cross, score_x, reason)
+        reason = f"판정 {verdict} != expected {case.expected}"
+    return CaseResult(case.name, False, verdict, case.expected, score_cross, score_x, reason)
 
 
 def print_case_result(result: CaseResult) -> None:
@@ -301,23 +313,16 @@ def print_case_result(result: CaseResult) -> None:
     print(verdict_line)
 
 
-def collect_performance(filters: FilterTable, patterns: Dict[str, JSONValue]) -> List[Tuple[int, float]]:
+def collect_performance(filters: FilterTable, cases: List[ParsedCase]) -> List[Tuple[int, float]]:
+    patterns: Dict[int, Grid] = {}
+    for case in cases:
+        patterns.setdefault(case.size, case.pattern)
     measurements = [
         (3, measure_mac_ms(Grid.from_rows(X_FILTER_3X3), Grid.from_rows(CROSS_FILTER_3X3)))
     ]
     for size in sorted(filters):
         filter_grid = filters[size][CROSS]
-        pattern = filter_grid
-        for name, raw_case in patterns.items():
-            try:
-                if extract_size(name) != size or not isinstance(raw_case, dict):
-                    continue
-                candidate = Grid.from_rows(raw_case["input"])
-            except (SchemaError, KeyError, TypeError):
-                continue
-            if candidate.size == size:
-                pattern = candidate
-                break
+        pattern = patterns.get(size, filter_grid)
         measurements.append((size, measure_mac_ms(pattern, filter_grid)))
     return sorted(measurements)
 
@@ -355,13 +360,20 @@ def run_json_mode(path: str = DATA_PATH) -> None:
 
     print_section("[2] 패턴 분석 (라벨 정규화 적용)")
     results: List[CaseResult] = []
+    cases: List[ParsedCase] = []
     for name in patterns:
-        result = evaluate_case(name, patterns[name], filters)
+        try:
+            case = parse_case(name, patterns[name])
+        except SchemaError as error:
+            result = error_result(name, str(error))
+        else:
+            cases.append(case)
+            result = evaluate_case(case, filters)
         results.append(result)
         print_case_result(result)
 
     print_section(f"[3] 성능 분석 (평균/{PERF_REPEAT}회)")
-    print_performance_table(collect_performance(filters, patterns))
+    print_performance_table(collect_performance(filters, cases))
 
     print_section("[4] 결과 요약")
     print_summary(results)
