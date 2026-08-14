@@ -1,15 +1,11 @@
 import json
 import time
-from typing import Dict, List, Mapping, NamedTuple, Sequence, Tuple, Union
+from typing import NamedTuple
 
 
 # ---------------------------------------
-# Types and constants
+# Constants
 # ---------------------------------------
-
-JSONValue = Union[
-    None, bool, int, float, str, Sequence["JSONValue"], Mapping[str, "JSONValue"]
-]
 
 EPSILON = 1e-9
 PERF_REPEAT = 10
@@ -21,8 +17,8 @@ UNDECIDED = "UNDECIDED"
 
 LABEL_TABLE = {"+": CROSS, "cross": CROSS, "x": X}
 
-CROSS_FILTER_3X3: List[List[float]] = [[0, 1, 0], [1, 1, 1], [0, 1, 0]]
-X_FILTER_3X3: List[List[float]] = [[1, 0, 1], [0, 1, 0], [1, 0, 1]]
+CROSS_FILTER_3X3: list[list[float]] = [[0, 1, 0], [1, 1, 1], [0, 1, 0]]
+X_FILTER_3X3: list[list[float]] = [[1, 0, 1], [0, 1, 0], [1, 0, 1]]
 
 
 # ---------------------------------------
@@ -48,14 +44,14 @@ class Grid:
         if size <= 0:
             raise SchemaError("크기는 1 이상이어야 합니다.")
         self.size: int = size
-        self._cells: List[List[float]] = [[0.0] * size for _ in range(size)]
+        self._cells: list[list[float]] = [[0.0] * size for _ in range(size)]
 
     @classmethod
-    def from_rows(cls, rows: JSONValue) -> "Grid":
+    def from_rows(cls, rows: object) -> "Grid":
         if not isinstance(rows, list):
             raise SchemaError("2차원 배열이 아닙니다.")
         size = len(rows)
-        checked_rows: List[List[JSONValue]] = []
+        checked_rows: list[list[object]] = []
         for row in rows:
             if not isinstance(row, list):
                 raise SchemaError("2차원 배열이 아닙니다.")
@@ -79,7 +75,7 @@ class Grid:
     def set(self, r: int, c: int, value: float) -> None:
         self._cells[r][c] = value
 
-    def row(self, r: int) -> List[float]:
+    def row(self, r: int) -> list[float]:
         return self._cells[r]
 
 
@@ -135,7 +131,7 @@ def print_section(title: str) -> None:
     print("#" + "-" * 39)
 
 
-def print_performance_table(measurements: List[Tuple[int, float]]) -> None:
+def print_performance_table(measurements: list[tuple[int, float]]) -> None:
     print("크기        평균 시간(ms)      연산 횟수")
     print("-" * 40)
     for size, avg_ms in measurements:
@@ -153,13 +149,13 @@ def print_grid(grid: Grid) -> None:
         print("  " + " ".join(repr(value) for value in grid.row(r)))
 
 
-def parse_row(line: str, size: int) -> List[float]:
+def parse_row(line: str, size: int) -> list[float]:
     tokens = line.split()
     if len(tokens) != size:
         raise ValueError(
             f"입력 형식 오류: 각 줄에 {size}개의 숫자를 공백으로 구분해 입력하세요."
         )
-    values: List[float] = []
+    values: list[float] = []
     for token in tokens:
         try:
             values.append(float(token))
@@ -171,7 +167,7 @@ def parse_row(line: str, size: int) -> List[float]:
 def read_grid(title: str, size: int) -> Grid:
     while True:
         print(f"{title} ({size}줄 입력, 공백 구분)")
-        rows: List[List[float]] = []
+        rows: list[list[float]] = []
         try:
             for _ in range(size):
                 rows.append(parse_row(input(), size))
@@ -237,10 +233,10 @@ class ParsedCase(NamedTuple):
     expected: str
 
 
-FilterTable = Dict[int, Dict[str, Grid]]
+FilterTable = dict[int, dict[str, Grid]]
 
 
-def normalize_label(raw: JSONValue) -> str:
+def normalize_label(raw: object) -> str:
     key = str(raw).strip().lower()
     if key not in LABEL_TABLE:
         raise SchemaError(f"알 수 없는 라벨입니다: {raw!r}")
@@ -264,7 +260,7 @@ def safe_size(key: str) -> int:
         return -1
 
 
-def load_filters(raw_filters: JSONValue) -> FilterTable:
+def load_filters(raw_filters: object) -> FilterTable:
     if not isinstance(raw_filters, dict):
         raise SchemaError("filters 항목이 없거나 형식이 올바르지 않습니다.")
     filters: FilterTable = {}
@@ -274,7 +270,7 @@ def load_filters(raw_filters: JSONValue) -> FilterTable:
             entry = raw_filters[key]
             if not isinstance(entry, dict):
                 raise SchemaError(f"{key} 필터 형식 오류: 객체가 아닙니다.")
-            pair: Dict[str, Grid] = {}
+            pair: dict[str, Grid] = {}
             for label_key, rows in entry.items():
                 grid = Grid.from_rows(rows)
                 if grid.size != size:
@@ -293,7 +289,7 @@ def load_filters(raw_filters: JSONValue) -> FilterTable:
     return filters
 
 
-def parse_case(name: str, raw_case: JSONValue) -> ParsedCase:
+def parse_case(name: str, raw_case: object) -> ParsedCase:
     if not isinstance(raw_case, dict) or "input" not in raw_case or "expected" not in raw_case:
         raise SchemaError("input/expected 키가 필요합니다.")
     size = extract_size(name)
@@ -343,8 +339,8 @@ def print_case_result(result: CaseResult) -> None:
     print(verdict_line)
 
 
-def collect_performance(filters: FilterTable, cases: List[ParsedCase]) -> List[Tuple[int, float]]:
-    patterns: Dict[int, Grid] = {}
+def collect_performance(filters: FilterTable, cases: list[ParsedCase]) -> list[tuple[int, float]]:
+    patterns: dict[int, Grid] = {}
     for case in cases:
         patterns.setdefault(case.size, case.pattern)
     measurements = [
@@ -357,7 +353,7 @@ def collect_performance(filters: FilterTable, cases: List[ParsedCase]) -> List[T
     return sorted(measurements)
 
 
-def print_summary(results: List[CaseResult]) -> None:
+def print_summary(results: list[CaseResult]) -> None:
     failures = [result for result in results if not result.passed]
     print(f"총 테스트: {len(results)}개")
     print(f"통과: {len(results) - len(failures)}개")
@@ -389,8 +385,8 @@ def run_json_mode(path: str = DATA_PATH) -> None:
         return
 
     print_section("[2] 패턴 분석 (라벨 정규화 적용)")
-    results: List[CaseResult] = []
-    cases: List[ParsedCase] = []
+    results: list[CaseResult] = []
+    cases: list[ParsedCase] = []
     for name in patterns:
         try:
             case = parse_case(name, patterns[name])
