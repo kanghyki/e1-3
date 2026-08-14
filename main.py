@@ -249,10 +249,10 @@ def load_filters(raw_filters: JSONValue) -> FilterTable:
             if missing:
                 raise SchemaError(f"{key} 필터 누락: {', '.join(missing)}")
         except (SchemaError, AttributeError, TypeError) as error:
-            print(f"✗ {key} 필터 로드 실패 ({error})")
+            print(f"[FAIL] {key} 필터 로드 실패 ({error})")
             continue
         filters[size] = pair
-        print(f"✓ {key:<8} 필터 로드 완료 ({CROSS}, {X})")
+        print(f"[OK]   {key:<8} 필터 로드 완료 ({CROSS}, {X})")
     return filters
 
 
