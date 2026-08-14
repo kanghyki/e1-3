@@ -230,6 +230,7 @@ class ParsedCase(NamedTuple):
     expected: str
 
 
+# dict[filter size, dict[label, filter]]
 FilterTable = dict[int, dict[str, Grid]]
 
 
